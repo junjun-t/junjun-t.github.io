@@ -1,0 +1,185 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "J. Terao"
+date: '2022-11-05'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+ The New York City Police Department publishes data on the shooting incidents every year.
+ This report analyses the changes in the number of shooting incidents and examines whether there are the differences among five boroughs.
+ 
+# Method
+ The data used in this report is downloaded from NYC Open Data <https://opendata.cityofnewyork.us>.\
+ > NYPD Shooting Incident Data (Historic) : <https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv>
+
+```{r get_nypd_data, message=FALSE}
+library(tidyverse)
+library(lubridate)
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/"
+file_names = c("rows.csv")
+urls = str_c(url_in, file_names)
+data <- read_csv(urls[1])
+populations <- read_csv("https://junjun-t.github.io/BORO_Populations.csv")
+colnames(populations) <- c('year', 'brooklyn', 'bronx', 'queens', 
+                           'manhattan', 'staten')
+
+data <- data %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+data$BORO <- as.factor(data$BORO)
+data$INCIDENT_KEY <- as.factor(data$INCIDENT_KEY)
+```
+ The number of incidents is counted by each borough, and the data is separated by year.
+<!-- * by victims -> by incidents : 
+(1) drop victim's columns & duplicated rows
+(2) count by incident key
+(3) merge dropped data and result of counts -->
+
+```{r victims_to_incidents ,error=TRUE}
+# drop victim's columns
+data_edited <- data %>% select(-STATISTICAL_MURDER_FLAG, -PERP_AGE_GROUP, 
+                               -PERP_SEX, -PERP_RACE, -JURISDICTION_CODE, 
+                               -VIC_AGE_GROUP, -VIC_SEX, -VIC_RACE)
+
+# count and save numbers of victims
+victim_count <- data_edited %>% count(INCIDENT_KEY)
+
+# drop duplicated rows
+data_edited <- unique(data_edited, incomparables = FALSE, fromLast = FALSE)
+
+# merge 2 data
+data_edited <- merge(data_edited, victim_count, by="INCIDENT_KEY")
+
+# separate data by BORO
+brooklyn <- data_edited %>% subset(BORO == 'BROOKLYN')
+bronx <- data_edited %>% subset(BORO == 'BRONX')
+queens <- data_edited %>% subset(BORO == 'QUEENS')
+manhattan <- data_edited %>% subset(BORO == 'MANHATTAN')
+staten <- data_edited %>% subset(BORO == 'STATEN ISLAND')
+```
+
+<!-- * transition of number of incidents by BORO
+(1) count by years in each BORO
+(2) list the number of counts
+(3) plot the graph -->
+
+```{r data_by_incident_by_year}
+# make lists for each BORO
+by_incident_by_year <- data.frame(2006:2021, 1, 1, 1, 1, 1)
+colnames(by_incident_by_year) <- c('year', 'Brooklyn', 'Bronx', 'Queens', 
+                                   'Manhattan', 'Staten')
+
+i <- 1
+while((i + 2005) < 2022){
+  by_incident_by_year[i, 'Brooklyn'] <- brooklyn %>% 
+    filter((brooklyn$OCCUR_DATE >= as.Date(ISOdate(2005 + i, 1, 1))) &
+             (brooklyn$OCCUR_DATE < as.Date(ISOdate(2006 + i, 1, 1)))
+           ) %>% 
+    tally()
+  
+  by_incident_by_year[i, 'Bronx'] <- bronx %>% 
+    filter((bronx$OCCUR_DATE >= as.Date(ISOdate(2005 + i, 1, 1))) &
+             (bronx$OCCUR_DATE < as.Date(ISOdate(2006 + i, 1, 1)))
+           ) %>% 
+    tally()
+  
+  by_incident_by_year[i, 'Queens'] <- queens %>% 
+    filter((queens$OCCUR_DATE >= as.Date(ISOdate(2005 + i, 1, 1))) &
+             (queens$OCCUR_DATE < as.Date(ISOdate(2006 + i, 1, 1)))
+           ) %>% 
+    tally()
+  
+  by_incident_by_year[i, 'Manhattan'] <- manhattan %>% 
+    filter((manhattan$OCCUR_DATE >= as.Date(ISOdate(2005 + i, 1, 1))) &
+             (manhattan$OCCUR_DATE < as.Date(ISOdate(2006 + i, 1, 1)))
+           ) %>% 
+    tally()
+  
+  by_incident_by_year[i, 'Staten'] <- staten %>% 
+    filter((staten$OCCUR_DATE >= as.Date(ISOdate(2005 + i, 1, 1))) &
+             (staten$OCCUR_DATE < as.Date(ISOdate(2006 + i, 1, 1)))
+           ) %>% 
+    tally()
+  
+  i <- i + 1
+}
+
+
+```
+
+ For more analysis, we made a comparison of the incident rate per ten thousand of the population because each area has a different scale of population.
+ <!--Furthermore, we hypothesized that the more populous the borough, the greater the number of incidents.
+ To test this hypothesis, we calculated the number of incidents per 10,000 population.-->
+<!-- * incident rate per 100000(10^5) of the Population
+(1) calculate the ratio of each BORO
+(2) draw the graph -->
+
+```{r by_incident_by_year_ratio}
+# calculate the ratio of each BORO
+by_incident_by_year_ratio <- data.frame(2006:2021, 1, 1, 1, 1, 1)
+colnames(by_incident_by_year_ratio) <- c('year', 'Brooklyn', 'Bronx', 'Queens', 
+                                         'Manhattan', 'Staten')
+
+by_incident_by_year_ratio['Brooklyn'] <- (by_incident_by_year['Brooklyn'] / 
+                                            populations['brooklyn'] * 100000)
+by_incident_by_year_ratio['Bronx'] <- (by_incident_by_year['Bronx'] / 
+                                         populations['bronx'] * 100000)
+by_incident_by_year_ratio['Queens'] <- (by_incident_by_year['Queens'] / 
+                                          populations['queens'] * 100000)
+by_incident_by_year_ratio['Manhattan'] <- (by_incident_by_year['Manhattan'] / 
+                                             populations['manhattan'] * 100000)
+by_incident_by_year_ratio['Staten'] <- (by_incident_by_year['Staten'] / 
+                                          populations['staten'] * 100000)
+
+```
+
+# Result
+ The number of incidents declined in each area from 2006 to 2019. However, it turned to an increasing trend from 2020, when the COVID-19 pandemic started around the world. Though the order of the number of incidents remained the same for 15 years, the number in Manhattan reached greater than that in Queens last year.
+```{r result_plots_transition}
+# transition of number of incidents by BORO
+by_incident_by_year_long <- gather(by_incident_by_year, bucket, 
+                                   number_of_incidents, -year)
+
+ggplot(by_incident_by_year_long, 
+       aes(year, number_of_incidents, col = bucket)) + 
+  geom_point() + 
+  geom_line() + 
+  labs(title = "The Transition of Number of Incidents of each Borough",
+       x = "Year",
+       y = "Number of Incidents")
+```
+
+ The highest incident rate per ten thousand of the population was that of Bronx during the period from 2006 to 2021. The order of Queens, Manhattan and Staten Island had fluctuated for 15 years, but the incident rate of Manhattan was rising in 2020. It corresponds to the fact that the total number of shooting incidents in Manhattan turned to be greater than that of Queens.
+```{r result_plots_rate}
+# incident rate per 100000(10^5) of the Population
+by_incident_by_year_ratio_long <- gather(by_incident_by_year_ratio, bucket, 
+                                         number_of_incidents, -year)
+
+ggplot(by_incident_by_year_ratio_long, 
+       aes(year, number_of_incidents, col = bucket)) + 
+  geom_point() + 
+  geom_line() + 
+  labs(title = "The Transition of Incident Rates of each Borough",
+       x = "Year",
+       y = "Incident Rate per 100,000 of each Borough")
+
+```
+
+# Discussion
+ The incident rate of an area could be an indicator whether that area is safe or not.  
+ A notable results is the incident rate in Queens. Although Queens has the second largest population in the five boroughs, the number of incidents is ranked third and the incident rate per ten thousand people was lowest from 2015 to 2017. This area may be the safest borough in New York City. One of the characteristics of Queens is ethnic and racial diversity. Another research is necessary to show the correlation between this result and these characteristics.  
+ In Contrast, Bronx has the second greatest number of incidents in the five boroughs, and the incident rate is the highest because Bronx is the second least populated borough. The characteristics of Bronx are its historical background and poverty, and this result shows the poor security.  
+ The number of incidents in all five boroughs was decreasing, but it started to increase after the COVID-19 pandemic. We suppose that the reasons may include unemployment, an economic depression and restricted communication that could make people feel stressed. Future data will show the post COVID-19 situation. However, as other fields are also changing, it could be difficult to evaluate the influence from the pandemic.  
+ 
+ 
+## Limitation
+ This analysis could not evaluate the scale of each case. Even a personal conflict or a case which had more than ten victims was counted as one cases. To mitigate this bias, it is necessary to examine how the number of victims has been distributed in each borough.  
+ 
+ 
+# Conclusion
+ Queens and Staten Island might be the safest area in the five boroughs. The shooting incidents are more frequent after the COVID-19 pandemic. We have to keep observing the situation carefully.
